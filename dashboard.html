@@ -1,413 +1,221 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>台股評估地圖 | TWSE Valuation Dashboard</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
-<style>
-/* ── Design Tokens（與 update_dashboard.py 完全一致）─────────── */
-:root{
-  --bg:#F8F7F2; --navy:#004AAD; --navy-light:#1a5fc4;
-  --text:#1a1a1a; --text-mid:#444; --text-light:#777;
-  --border:#d4d0c4; --card-bg:#fff;
-  --red:#C8102E;    --red-bg:#fff0f2;
-  --green:#006B3C;  --green-bg:#f0fff6;
-  --orange:#CC5500; --orange-bg:#fff5ee;
-  --yellow-bg:#fffae8;
-  --shadow:0 2px 8px rgba(0,74,173,.08);
-}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;min-height:100vh}
+"""
+update_dashboard.py
+===================
+功能：
+1. 找最新的 twse_*.json
+2. 把 financial_metrics 嵌入 dashboard.html（替換 SEED_DATA）
+3. git commit + push（可開關）
 
-/* ── Header ─────────────────────────────────────────────────── */
-.header{background:var(--navy);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.2)}
-.header h1{font-size:17px;font-weight:700;letter-spacing:.04em}
-.header .meta{font-size:11px;opacity:.75;font-family:'JetBrains Mono',monospace}
+用法：
+python update_dashboard.py
+python update_dashboard.py --no-push ← 只更新 HTML，不 push
 
-/* ── Content ─────────────────────────────────────────────────── */
-.content{padding:20px;max-width:1100px;margin:0 auto}
-.section-title{font-size:15px;font-weight:700;color:var(--navy);border-left:4px solid var(--navy);padding-left:10px;margin:24px 0 14px}
-.section-title:first-child{margin-top:4px}
+安全性：
+- 不刪除任何檔案
+- git 用 list 模式，不用 shell=True
+- 只寫入 dashboard.html，不碰其他檔案
+"""
 
-/* ── Stat Cards ──────────────────────────────────────────────── */
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px}
-.stat-card{background:var(--card-bg);border-radius:10px;padding:14px 16px;box-shadow:var(--shadow);border:1px solid var(--border);position:relative;overflow:hidden}
-.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--navy)}
-.stat-card.green::before{background:var(--green)}
-.stat-card.red::before{background:var(--red)}
-.stat-card.orange::before{background:var(--orange)}
-.stat-label{font-size:10px;color:var(--text-light);letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
-.stat-value{font-size:28px;font-weight:700;font-family:'JetBrains Mono',monospace;line-height:1;color:var(--navy)}
-.stat-card.green .stat-value{color:var(--green)}
-.stat-card.red .stat-value{color:var(--red)}
-.stat-card.orange .stat-value{color:var(--orange)}
-.stat-sub{font-size:11px;color:var(--text-light);margin-top:4px}
+import argparse
+import json
+import re
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
 
-/* ── Sliders ─────────────────────────────────────────────────── */
-.slider-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
-.slider-card{background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px;box-shadow:var(--shadow)}
-.slider-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
-.slider-name{font-size:12px;color:var(--text-mid);font-weight:600}
-.slider-val{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--navy);background:rgba(0,74,173,.07);padding:2px 10px;border-radius:4px}
-input[type=range]{width:100%;accent-color:var(--navy)}
+# ═══════════════════════════════════════════
+# CONFIG — 改這裡就好
+# ═══════════════════════════════════════════
 
-/* ── Chart Container ─────────────────────────────────────────── */
-.chart-card{background:var(--card-bg);border-radius:10px;padding:18px;box-shadow:var(--shadow);border:1px solid var(--border);margin-bottom:24px}
-.chart-wrap{position:relative;height:420px}
-.quadrant-legend{display:grid;grid-template-columns:1fr 1fr;margin-top:12px;gap:6px}
-.ql{font-size:11px;color:var(--text-light);padding:4px 10px;border-radius:4px}
-.ql.tl{background:var(--green-bg);color:var(--green)}
-.ql.tr{background:var(--yellow-bg);color:var(--orange)}
-.ql.bl{background:rgba(0,74,173,.06);color:var(--navy)}
-.ql.br{background:var(--red-bg);color:var(--red)}
+# twse_fetcher.py 輸出 JSON 的資料夾（你的 JSON 和追蹤個股.txt 在這裡）
+JSON_FOLDER = Path(r"C:\Users\mis23\OneDrive\桌面\twse_fetcher")
 
-/* ── Data Table ─────────────────────────────────────────────── */
-.data-table{width:100%;border-collapse:collapse;background:var(--card-bg);border-radius:10px;overflow:hidden;box-shadow:var(--shadow);margin-bottom:24px;font-size:13px}
-.data-table th{background:var(--navy);color:#fff;padding:10px 12px;text-align:left;font-weight:600;font-size:13px}
-.data-table td{padding:9px 12px;border-bottom:1px solid var(--border)}
-.data-table tr:last-child td{border-bottom:none}
-.data-table tr:hover td{background:rgba(0,74,173,.03)}
-.data-table td.mono{font-family:'JetBrains Mono',monospace}
-.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;font-family:'JetBrains Mono',monospace}
-.badge.value{background:var(--green-bg);color:var(--green)}
-.badge.growth{background:var(--yellow-bg);color:var(--orange)}
-.badge.premium{background:var(--red-bg);color:var(--red)}
-.badge.quality{background:rgba(0,74,173,.08);color:var(--navy)}
+# dashboard.html 的位置（GitHub repo 資料夾）
+DASHBOARD_HTML = Path(r"C:\Users\mis23\OneDrive\桌面\my-stock-dashboard-TWSE-valuation\dashboard.html")
 
-/* ── JSON Panel ─────────────────────────────────────────────── */
-.json-panel{background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:24px;box-shadow:var(--shadow)}
-.json-toggle{background:var(--navy);color:#fff;border:none;padding:9px 18px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;letter-spacing:.03em}
-.json-body{margin-top:14px;display:none}
-.json-body.open{display:block}
-.json-hint{font-size:12px;color:var(--text-light);margin-bottom:8px;line-height:1.7}
-.json-hint code{background:#f0eee8;border-radius:3px;padding:1px 5px;font-family:'JetBrains Mono',monospace;font-size:11px}
-textarea#json-input{width:100%;height:130px;background:#f8f7f2;border:1px solid var(--border);border-radius:6px;padding:10px;font-family:'JetBrains Mono',monospace;font-size:12px;resize:vertical;color:var(--text)}
-.json-actions{display:flex;align-items:center;gap:10px;margin-top:10px}
-.btn-load{background:var(--navy);color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600}
-.btn-load:hover{background:var(--navy-light)}
-.json-err{color:var(--red);font-size:12px}
-.json-ok{color:var(--green);font-size:12px}
+# ═══════════════════════════════════════════
+# Step 1：找最新 JSON
+# ═══════════════════════════════════════════
 
-/* ── No-data watermark ───────────────────────────────────────── */
-.no-data{text-align:center;padding:60px 20px;color:var(--text-light);font-size:15px}
+def find_latest_json(folder: Path) -> Path | None:
+matches = sorted(folder.glob("twse_*.json"))
+if not matches:
+print(f"❌ 找不到 twse_*.json 在 {folder}")
+return None
+latest = matches[-1]
+print(f"✅ 使用 JSON：{latest.name}")
+return latest
 
-/* ── Footer ─────────────────────────────────────────────────── */
-footer{text-align:center;padding:20px;font-size:11px;color:var(--text-light);border-top:1px solid var(--border);margin-top:10px}
+# ═══════════════════════════════════════════
+# Step 2：讀取 financial_metrics
+# ═══════════════════════════════════════════
 
-@media(max-width:600px){
-  .slider-row{grid-template-columns:1fr}
-  .quadrant-legend{grid-template-columns:1fr}
-}
-</style>
-</head>
-<body>
+def load_metrics(json_path: Path) -> tuple[list, str]:
+raw = json.loads(json_path.read_text(encoding="utf-8"))
+metrics = raw.get("financial_metrics", [])
 
-<!-- Header -->
-<div class="header">
-  <h1>📊 台股評估地圖 — P/E vs P/B Valuation Map</h1>
-  <div class="meta" id="header-meta">載入中...</div>
-</div>
+# 過濾：pe > 0 且 pb > 0（null 值跳過）
+valid = [
+r for r in metrics
+if r.get("本益比(倍)") and r.get("股價淨值比(倍)")
+and r["本益比(倍)"] > 0 and r["股價淨值比(倍)"] > 0
+]
+date_str = raw.get("meta", {}).get("generated_at", "")[:10] or \
+(valid[0].get("資料日期", "") if valid else "")
 
-<div class="content">
+print(f"✅ 有效股票：{len(valid)} 支 / 日期：{date_str}")
+return valid, date_str
 
-  <!-- JSON Loader -->
-  <div class="json-panel" style="margin-top:20px">
-    <button class="json-toggle" onclick="toggleJSON()">⬆ 更新資料 — 貼入 JSON</button>
-    <div class="json-body" id="json-body">
-      <div class="json-hint">
-        將 <code>twse_fetcher.py</code> 產生的 <code>twse_YYYYMMDD.json</code> 內容貼入，點「載入資料」即可更新圖表。<br>
-        支援格式：<code>{"financial_metrics":[{"股票代號":"2330","公司名稱":"台積電","本益比(倍)":29.44,"殖利率(%)":1.13,"股價淨值比(倍)":9.33}]}</code>
-      </div>
-      <textarea id="json-input" placeholder='{ "financial_metrics": [ ... ] }'></textarea>
-      <div class="json-actions">
-        <button class="btn-load" onclick="loadJSON()">載入資料 →</button>
-        <span id="json-msg"></span>
-      </div>
-    </div>
-  </div>
+# ═══════════════════════════════════════════
+# Step 3：產生新的 SEED_DATA JS 陣列
+# ═══════════════════════════════════════════
 
-  <!-- Stat Cards -->
-  <div class="section-title">市場概覽</div>
-  <div class="stats-grid" id="stats-grid"></div>
+def build_seed_js(metrics: list) -> str:
+rows = []
+for r in metrics:
+pe = r.get("本益比(倍)") or 0
+pb = r.get("股價淨值比(倍)") or 0
+dy = r.get("殖利率(%)") or 0
+rows.append(
+f' {{code:"{r["股票代號"]}",name:"{r["公司名稱"]}",'
+f'pe:{pe},pb:{pb},dy:{dy}}}'
+)
+return "[\n" + ",\n".join(rows) + "\n]"
 
-  <!-- Sliders -->
-  <div class="slider-row">
-    <div class="slider-card">
-      <div class="slider-header">
-        <span class="slider-name">📐 本益比 P/E 分界線</span>
-        <span class="slider-val" id="pe-val">20</span>
-      </div>
-      <input type="range" id="pe-slider" min="5" max="80" value="20" oninput="onSlider()">
-    </div>
-    <div class="slider-card">
-      <div class="slider-header">
-        <span class="slider-name">📐 股價淨值比 P/B 分界線</span>
-        <span class="slider-val" id="pb-val">3.0</span>
-      </div>
-      <input type="range" id="pb-slider" min="1" max="15" step="0.5" value="3" oninput="onSlider()">
-    </div>
-  </div>
+# ═══════════════════════════════════════════
+# Step 4：替換 dashboard.html 裡的 SEED_DATA
+# ═══════════════════════════════════════════
 
-  <!-- Scatter Chart -->
-  <div class="section-title">評估分佈圖 — P/E vs P/B</div>
-  <div class="chart-card">
-    <div class="chart-wrap">
-      <canvas id="scatter-chart"></canvas>
-    </div>
-    <div class="quadrant-legend">
-      <div class="ql tl">◉ 左上：高品質資產（Quality Assets）— 低P/E、高P/B</div>
-      <div class="ql tr">◎ 右上：高估優質成長（Premium & Growth）— 高P/E、高P/B</div>
-      <div class="ql bl">● 左下：價值安全帶（Value & Safety）— 低P/E、低P/B ← 低估</div>
-      <div class="ql br">◇ 右下：成長合理（Growth / Fair）— 高P/E、低P/B</div>
-    </div>
-  </div>
+def patch_html(html_path: Path, seed_js: str, date_str: str) -> bool:
+content = html_path.read_text(encoding="utf-8")
 
-  <!-- Detail Table -->
-  <div class="section-title">個股明細（按本益比升序）</div>
-  <div style="overflow-x:auto">
-    <table class="data-table" id="detail-table">
-      <thead>
-        <tr>
-          <th></th><th>代號</th><th>名稱</th>
-          <th>本益比 (P/E)</th><th>股價淨值比 (P/B)</th>
-          <th>殖利率 (%)</th><th>象限分類</th>
-        </tr>
-      </thead>
-      <tbody id="detail-tbody"></tbody>
-    </table>
-  </div>
+# 替換 let DATA = [
+  {code:"2330",name:"台積電",pe:29.44,pb:9.33,dy:1.13},
+  {code:"2317",name:"鴻海",pe:14.86,pb:1.59,dy:3.57},
+  {code:"2382",name:"廣達",pe:15.81,pb:4.87,dy:5.07},
+  {code:"3231",name:"緯創",pe:15.2,pb:2.35,dy:4.2},
+  {code:"2308",name:"台達電",pe:71.95,pb:16.13,dy:0.7},
+  {code:"3017",name:"奇鋐",pe:45.58,pb:19.61,dy:0.94},
+  {code:"2356",name:"英業達",pe:17.62,pb:2.01,dy:4.69},
+  {code:"2357",name:"華碩",pe:9.37,pb:1.56,dy:7.47},
+  {code:"3711",name:"日月光投控",pe:41.23,pb:4.83,dy:1.72},
+  {code:"2303",name:"聯電",pe:18.22,pb:2.0,dy:4.31},
+  {code:"4938",name:"和碩",pe:14.82,pb:1.03,dy:5.03},
+  {code:"2313",name:"華通",pe:49.73,pb:6.82,dy:1.02},
+  {code:"2354",name:"鴻準",pe:21.94,pb:0.67,dy:2.95},
+  {code:"1503",name:"士電",pe:29.74,pb:2.68,dy:2.68},
+  {code:"1514",name:"亞力",pe:31.97,pb:4.51,dy:2.09},
+  {code:"2404",name:"漢唐",pe:18.8,pb:9.15,dy:4.42},
+  {code:"2049",name:"上銀",pe:56.03,pb:2.29,dy:0.83},
+  {code:"2359",name:"所羅門",pe:90.65,pb:3.31,dy:0.9},
+  {code:"4585",name:"達明",pe:231.15,pb:4.57,dy:0.33},
+  {code:"2395",name:"研華",pe:28.5,pb:5.49,dy:3.21},
+  {code:"2352",name:"佳世達",pe:33.06,pb:1.32,dy:4.2},
+  {code:"2634",name:"漢翔",pe:60.77,pb:2.5,dy:2.91},
+  {code:"6753",name:"龍德造船",pe:22.13,pb:3.22,dy:0.97},
+  {code:"2630",name:"亞航",pe:47.15,pb:2.78,dy:1.91},
+  {code:"1216",name:"統一",pe:21.07,pb:3.04,dy:4.13},
+  {code:"6472",name:"保瑞",pe:17.77,pb:3.44,dy:2.4},
+  {code:"1795",name:"美時",pe:12.05,pb:2.39,dy:1.24}
+]; 區塊
+pattern = r"let DATA\s*=\s*\[[\s\S]*?\];"
+replacement = f"let DATA = {seed_js};"
+new_content, n = re.subn(pattern, replacement, content, count=1)
 
-</div><!-- /content -->
+if n == 0:
+print("❌ 找不到 'let DATA = [...]' 區塊，請確認 dashboard.html 版本正確")
+return False
 
-<footer>
-  資料來源：台灣證券交易所 OpenAPI (openapi.twse.com.tw) ／ 僅供研究參考，非投資建議<br>
-  <a href="https://github.com" style="color:var(--navy)">GitHub</a> ·
-  使用 <a href="https://openapi.twse.com.tw" style="color:var(--navy)" target="_blank">TWSE OpenAPI</a> ·
-  本工具開放原始碼，歡迎自由使用
-</footer>
+# 替換 dataDate
+new_content = re.sub(
+r'let dataDate\s*=\s*".*?";',
+f'let dataDate = "2026-04-09";',
+new_content
+)
 
-<script>
-Chart.register(ChartDataLabels);
+html_path.write_text(new_content, encoding="utf-8")
+print(f"✅ dashboard.html 已更新（{len(metrics_cache)} 支股票，日期 {date_str}）")
+return True
 
-/* ── Seed Data（來自 twse_fetcher.py 2026-04-08）─────────────── */
-let DATA = [
-  {code:"1216",name:"統一",    pe:21.07, pb:3.04,  dy:4.13},
-  {code:"2049",name:"上銀",    pe:56.03, pb:2.29,  dy:0.83},
-  {code:"2308",name:"台達電",  pe:71.95, pb:16.13, dy:0.70},
-  {code:"2317",name:"鴻海",    pe:14.86, pb:1.59,  dy:3.57},
-  {code:"2330",name:"台積電",  pe:29.44, pb:9.33,  dy:1.13},
-  {code:"2382",name:"廣達",    pe:15.81, pb:4.87,  dy:5.07},
-  {code:"2634",name:"漢翔",    pe:60.77, pb:2.50,  dy:2.91},
-  {code:"3017",name:"奇鋐",    pe:45.58, pb:19.61, dy:0.94},
-  {code:"3231",name:"緯創",    pe:15.20, pb:2.35,  dy:4.20},
-];
-let dataDate = "2026-04-08";
+metrics_cache = []
 
-/* ── State ───────────────────────────────────────────────────── */
-let peThresh = 20, pbThresh = 3.0;
-let scatterChart = null;
+# ═══════════════════════════════════════════
+# Step 5：Git commit + push
+# ═══════════════════════════════════════════
 
-/* ── Quadrant helper ─────────────────────────────────────────── */
-function getQuadrant(pe, pb) {
-  const lo_pe = pe < peThresh, lo_pb = pb < pbThresh;
-  if ( lo_pe &&  lo_pb) return {label:"低估價值",  badge:"value",   color:"#006B3C"};
-  if ( lo_pe && !lo_pb) return {label:"高品質資產", badge:"quality", color:"#004AAD"};
-  if (!lo_pe &&  lo_pb) return {label:"成長合理",  badge:"growth",  color:"#CC5500"};
-  return                        {label:"高估成長",  badge:"premium", color:"#C8102E"};
-}
+def git_push(repo_dir: Path, date_str: str) -> bool:
+commit_msg = f"auto: update dashboard {date_str}"
+commands = [
+["git", "-C", str(repo_dir), "add", "dashboard.html"],
+["git", "-C", str(repo_dir), "commit", "-m", commit_msg],
+["git", "-C", str(repo_dir), "push"],
+]
+for cmd in commands:
+print(f" $ {' '.join(cmd[2:])}") # 只顯示 git 部分
+result = subprocess.run(cmd, capture_output=True, text=True, shell=False)
+out = (result.stdout + result.stderr).strip()
+if out:
+print(f" {out}")
+if result.returncode != 0:
+if "nothing to commit" in out:
+print(" ℹ️ Nothing to commit")
+return True
+print(f" ❌ git 錯誤")
+return False
+return True
 
-/* ── Render Stats ────────────────────────────────────────────── */
-function renderStats() {
-  const total   = DATA.length;
-  const values  = DATA.filter(d => d.pe < peThresh && d.pb < pbThresh);
-  const avgPE   = (DATA.reduce((s,d)=>s+d.pe,0)/total).toFixed(1);
-  const avgDY   = (DATA.reduce((s,d)=>s+d.dy,0)/total).toFixed(2);
-  const grid    = document.getElementById('stats-grid');
-  grid.innerHTML = [
-    {cls:"",      label:"樣本總數 TOTAL",       val:total,             sub:"追蹤中的股票"},
-    {cls:"green", label:"低估企業 VALUE",        val:values.length,     sub:"P/E & P/B 雙低"},
-    {cls:"",      label:"平均本益比 AVG P/E",    val:avgPE+"x",         sub:"全樣本平均"},
-    {cls:"orange",label:"平均殖利率 AVG DY",     val:avgDY+"%",         sub:"全樣本平均"},
-  ].map(s=>`
-    <div class="stat-card ${s.cls}">
-      <div class="stat-label">${s.label}</div>
-      <div class="stat-value">${s.val}</div>
-      <div class="stat-sub">${s.sub}</div>
-    </div>`).join('');
-  document.getElementById('header-meta').textContent = `資料日期：${dataDate}`;
-}
+# ═══════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════
 
-/* ── Render Chart ────────────────────────────────────────────── */
-function renderChart() {
-  const byQ = {value:[], quality:[], growth:[], premium:[]};
-  DATA.forEach(d => {
-    const q = getQuadrant(d.pe, d.pb);
-    byQ[q.badge].push({x:d.pe, y:d.pb, label:d.name, code:d.code, dy:d.dy});
-  });
+def main():
+parser = argparse.ArgumentParser()
+parser.add_argument("--no-push", action="store_true", help="只更新 HTML，不 push")
+args = parser.parse_args()
 
-  const datasets = [
-    {key:"value",   label:"低估價值 (Value)",  color:"#006B3C"},
-    {key:"quality", label:"高品質資產 (Quality)",color:"#004AAD"},
-    {key:"growth",  label:"成長合理 (Growth)",  color:"#CC5500"},
-    {key:"premium", label:"高估成長 (Premium)", color:"#C8102E"},
-  ].map(q=>({
-    label: q.label,
-    data:  byQ[q.key],
-    backgroundColor: q.color,
-    borderColor: q.color,
-    pointRadius: 8,
-    pointHoverRadius: 11,
-    pointStyle: 'circle',
-  }));
+print("=" * 50)
+print(" 台股 Dashboard 更新腳本")
+print(f" {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+print("=" * 50)
 
-  const maxPE = Math.ceil(Math.max(...DATA.map(d=>d.pe)) * 1.2 / 5) * 5;
-  const maxPB = Math.ceil(Math.max(...DATA.map(d=>d.pb)) * 1.2 / 2) * 2;
+# 1. 找 JSON
+json_path = find_latest_json(JSON_FOLDER)
+if not json_path:
+sys.exit(1)
 
-  const ctx = document.getElementById('scatter-chart').getContext('2d');
-  if (scatterChart) scatterChart.destroy();
+# 2. 讀資料
+global metrics_cache
+metrics, date_str = load_metrics(json_path)
+metrics_cache = metrics
+if not metrics:
+print("❌ financial_metrics 為空，中止")
+sys.exit(1)
 
-  scatterChart = new Chart(ctx, {
-    type: 'scatter',
-    data: { datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      layout: { padding: { top: 20, right: 20 } },
-      plugins: {
-        legend: {
-          position: 'top',
-          labels: { font: { size: 12, family: "'Noto Sans TC'" }, padding: 16, usePointStyle: true }
-        },
-        tooltip: {
-          callbacks: {
-            label: ctx => {
-              const d = ctx.raw;
-              return [`${d.code} ${d.label}`, `P/E: ${d.x.toFixed(2)}x`, `P/B: ${d.y.toFixed(2)}x`, `殖利率: ${d.dy.toFixed(2)}%`];
-            }
-          },
-          titleFont: { size: 0 },
-          bodyFont: { size: 12, family: "'Noto Sans TC'" },
-          padding: 12,
-          cornerRadius: 8,
-        },
-        datalabels: {
-          align: 'top',
-          offset: 4,
-          font: { size: 11, family: "'Noto Sans TC'", weight: '500' },
-          color: ctx => ctx.dataset.backgroundColor,
-          formatter: (val) => val.label,
-        },
-        annotation: {},
-      },
-      scales: {
-        x: {
-          title: { display: true, text: '本益比 (P/E Ratio)', font: { size: 12 }, color: '#777', padding: { top: 8 } },
-          min: 0, max: maxPE,
-          grid: { color: 'rgba(0,0,0,.05)' },
-          ticks: { font: { size: 11, family: "'JetBrains Mono'" } },
-        },
-        y: {
-          title: { display: true, text: '股價淨值比 (P/B Ratio)', font: { size: 12 }, color: '#777' },
-          min: 0, max: maxPB,
-          grid: { color: 'rgba(0,0,0,.05)' },
-          ticks: { font: { size: 11, family: "'JetBrains Mono'" } },
-        }
-      },
-    },
-    plugins: [{
-      id: 'quadrantLines',
-      afterDraw(chart) {
-        const {ctx, scales: {x, y}} = chart;
-        const xPx = x.getPixelForValue(peThresh);
-        const yPx = y.getPixelForValue(pbThresh);
-        ctx.save();
-        ctx.setLineDash([6,4]);
-        ctx.strokeStyle = '#C8102E';
-        ctx.lineWidth = 1.5;
-        ctx.globalAlpha = 0.5;
-        // vertical line
-        ctx.beginPath(); ctx.moveTo(xPx, y.top); ctx.lineTo(xPx, y.bottom); ctx.stroke();
-        // horizontal line
-        ctx.beginPath(); ctx.moveTo(x.left, yPx); ctx.lineTo(x.right, yPx); ctx.stroke();
-        ctx.restore();
-      }
-    }]
-  });
-}
+# 3. 產生 JS
+seed_js = build_seed_js(metrics)
 
-/* ── Render Table ────────────────────────────────────────────── */
-function renderTable() {
-  const sorted = [...DATA].sort((a,b)=>a.pe-b.pe);
-  const tbody  = document.getElementById('detail-tbody');
-  tbody.innerHTML = sorted.map(d => {
-    const q  = getQuadrant(d.pe, d.pb);
-    const dot = `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${q.color}"></span>`;
-    return `<tr>
-      <td>${dot}</td>
-      <td class="mono" style="color:var(--navy);font-weight:600">${d.code}</td>
-      <td style="font-weight:500">${d.name}</td>
-      <td class="mono" style="font-weight:700">${d.pe.toFixed(2)}</td>
-      <td class="mono">${d.pb.toFixed(2)}</td>
-      <td class="mono" style="color:var(--green)">${d.dy.toFixed(2)}</td>
-      <td><span class="badge ${q.badge}">${q.label}</span></td>
-    </tr>`;
-  }).join('');
-}
+# 4. 寫入 HTML
+if not DASHBOARD_HTML.exists():
+print(f"❌ 找不到 {DASHBOARD_HTML}")
+sys.exit(1)
+if not patch_html(DASHBOARD_HTML, seed_js, date_str):
+sys.exit(1)
 
-/* ── Refresh All ─────────────────────────────────────────────── */
-function refresh() {
-  document.getElementById('pe-val').textContent = peThresh;
-  document.getElementById('pb-val').textContent = parseFloat(pbThresh).toFixed(1);
-  renderStats();
-  renderChart();
-  renderTable();
-}
+# 5. Push
+if args.no_push:
+print("\n[--no-push] 跳過 git push")
+print(f"→ 手動執行：cd {DASHBOARD_HTML.parent} && git add dashboard.html && git commit -m 'update {date_str}' && git push")
+else:
+print("\n[Git] commit & push...")
+ok = git_push(DASHBOARD_HTML.parent, date_str)
+if ok:
+print("✅ Push 成功！")
+print(f"\n🌐 https://mis23ms.github.io/my-stock-dashboard-TWSE-valuation/dashboard.html")
+else:
+print("❌ Push 失敗，請手動確認 git 設定")
 
-/* ── Slider ──────────────────────────────────────────────────── */
-function onSlider() {
-  peThresh = +document.getElementById('pe-slider').value;
-  pbThresh = +document.getElementById('pb-slider').value;
-  refresh();
-}
+print("\n🎉 完成！")
 
-/* ── JSON toggle / load ──────────────────────────────────────── */
-function toggleJSON() {
-  document.getElementById('json-body').classList.toggle('open');
-}
-
-function loadJSON() {
-  const raw = document.getElementById('json-input').value.trim();
-  const msg = document.getElementById('json-msg');
-  try {
-    const obj  = JSON.parse(raw);
-    const rows = obj.financial_metrics || obj;
-    if (!Array.isArray(rows)) throw new Error("找不到 financial_metrics 陣列");
-    const parsed = rows.map(r => ({
-      code: r["股票代號"] || r.code || "",
-      name: r["公司名稱"]  || r.name || "",
-      pe:   parseFloat(r["本益比(倍)"]       || r.pe  || 0),
-      pb:   parseFloat(r["股價淨值比(倍)"]   || r.pb  || 0),
-      dy:   parseFloat(r["殖利率(%)"]        || r.dy  || 0),
-    })).filter(r => r.code && r.pe > 0 && r.pb > 0);
-    if (parsed.length === 0) throw new Error("解析後無有效資料");
-    DATA     = parsed;
-    dataDate = obj.meta?.generated_at?.slice(0,10) || new Date().toISOString().slice(0,10);
-    msg.className = 'json-ok';
-    msg.textContent = `✅ 成功載入 ${DATA.length} 支股票`;
-    document.getElementById('json-body').classList.remove('open');
-    refresh();
-  } catch(e) {
-    msg.className = 'json-err';
-    msg.textContent = `❌ ${e.message}`;
-  }
-}
-
-/* ── Init ────────────────────────────────────────────────────── */
-refresh();
-</script>
-</body>
-</html>
+if __name__ == "__main__":
+main()

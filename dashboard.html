@@ -1,452 +1,286 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>台股評估地圖 | TWSE Valuation Dashboard</title>
+  <title>台股評估地圖 | Muggle Zoo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link
-    href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
-    rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script
-    src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
   <style>
-    /* ── Design Tokens（與 update_dashboard.py 完全一致）─────────── */
+    /* ── Muggle Zoo Design Tokens ─────────────────────────────────── */
     :root {
-      --bg: #F8F7F2;
-      --navy: #004AAD;
-      --navy-light: #1a5fc4;
-      --text: #1a1a1a;
-      --text-mid: #444;
-      --text-light: #777;
-      --border: #d4d0c4;
-      --card-bg: #fff;
-      --red: #C8102E;
-      --red-bg: #fff0f2;
-      --green: #006B3C;
-      --green-bg: #f0fff6;
-      --orange: #CC5500;
-      --orange-bg: #fff5ee;
-      --yellow-bg: #fffae8;
-      --shadow: 0 2px 8px rgba(0, 74, 173, .08);
+      --bg:         #050d1a;
+      --card-bg:    #0d1a2e;
+      --card-bg2:   #0a1628;
+      --gold:       #f5c842;
+      --gold-dim:   #c9a235;
+      --gold-glow:  rgba(245,200,66,.12);
+      --cream:      #f8f7f2;
+      --text:       #e8dcc8;
+      --text-mid:   #c8bfb0;
+      --text-dim:   #a09480;
+      --border:     #1a2a45;
+      --border-gold:rgba(245,200,66,.25);
+      --red:        #ef4444;
+      --red-bg:     rgba(239,68,68,.12);
+      --green:      #22c55e;
+      --green-bg:   rgba(34,197,94,.12);
+      --orange:     #f97316;
+      --orange-bg:  rgba(249,115,22,.12);
+      --blue:       #60a5fa;
+      --blue-bg:    rgba(96,165,250,.12);
+      --shadow:     0 4px 20px rgba(0,0,0,.4);
     }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0
-    }
-
-    body {
-      font-family: 'Noto Sans TC', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      font-size: 14px;
-      line-height: 1.6;
-      min-height: 100vh
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+      font-family:'Noto Sans TC',sans-serif;
+      background:var(--bg);
+      color:var(--text);
+      font-size:14px;
+      line-height:1.6;
+      min-height:100vh
     }
 
     /* ── Header ─────────────────────────────────────────────────── */
-    .header {
-      background: var(--navy);
-      color: #fff;
-      padding: 14px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, .2)
+    .header{
+      background:linear-gradient(90deg,#050d1a 0%,#0a1628 100%);
+      padding:12px 20px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      position:sticky;
+      top:0;z-index:100;
+      border-bottom:1px solid var(--border);
+      box-shadow:0 2px 20px rgba(0,0,0,.5)
     }
-
-    .header h1 {
-      font-size: 17px;
-      font-weight: 700;
-      letter-spacing: .04em
+    .header-left{display:flex;align-items:center;gap:14px}
+    .header-logo{width:36px;height:auto;display:block;opacity:.92}
+    .header-titles{display:flex;flex-direction:column;gap:1px}
+    .header-brand{
+      font-size:10px;font-weight:600;
+      letter-spacing:2px;text-transform:uppercase;
+      color:var(--gold-dim)
     }
-
-    .header .meta {
-      font-size: 11px;
-      opacity: .75;
-      font-family: 'JetBrains Mono', monospace
+    .header h1{
+      font-size:15px;font-weight:700;
+      color:var(--text);letter-spacing:.03em
+    }
+    .header .meta{
+      font-size:11px;
+      color:var(--gold);
+      font-family:'JetBrains Mono',monospace;
+      background:var(--gold-glow);
+      padding:4px 10px;border-radius:6px;
+      border:1px solid var(--border-gold)
     }
 
     /* ── Content ─────────────────────────────────────────────────── */
-    .content {
-      padding: 20px;
-      max-width: 1100px;
-      margin: 0 auto
-    }
+    .content{padding:20px;max-width:1100px;margin:0 auto}
 
-    .section-title {
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--navy);
-      border-left: 4px solid var(--navy);
-      padding-left: 10px;
-      margin: 24px 0 14px
+    .section-title{
+      font-size:13px;font-weight:700;
+      color:var(--gold-dim);
+      border-left:3px solid var(--gold);
+      padding-left:10px;
+      margin:24px 0 12px;
+      letter-spacing:.05em;
+      text-transform:uppercase
     }
-
-    .section-title:first-child {
-      margin-top: 4px
-    }
+    .section-title:first-child{margin-top:4px}
 
     /* ── Stat Cards ──────────────────────────────────────────────── */
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-      gap: 12px;
-      margin-bottom: 20px
+    .stats-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fill,minmax(155px,1fr));
+      gap:12px;margin-bottom:20px
     }
-
-    .stat-card {
-      background: var(--card-bg);
-      border-radius: 10px;
-      padding: 14px 16px;
-      box-shadow: var(--shadow);
-      border: 1px solid var(--border);
-      position: relative;
-      overflow: hidden
+    .stat-card{
+      background:var(--card-bg);
+      border-radius:12px;padding:14px 16px;
+      box-shadow:var(--shadow);
+      border:1px solid var(--border);
+      position:relative;overflow:hidden
     }
-
-    .stat-card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 4px;
-      background: var(--navy)
+    .stat-card::before{
+      content:'';position:absolute;
+      top:0;left:0;right:0;height:3px;
+      background:var(--gold)
     }
-
-    .stat-card.green::before {
-      background: var(--green)
+    .stat-card.green::before{background:var(--green)}
+    .stat-card.red::before{background:var(--red)}
+    .stat-card.orange::before{background:var(--orange)}
+    .stat-label{
+      font-size:10px;color:var(--text-dim);
+      letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px
     }
-
-    .stat-card.red::before {
-      background: var(--red)
+    .stat-value{
+      font-size:26px;font-weight:700;
+      font-family:'JetBrains Mono',monospace;
+      line-height:1;color:var(--gold)
     }
-
-    .stat-card.orange::before {
-      background: var(--orange)
-    }
-
-    .stat-label {
-      font-size: 10px;
-      color: var(--text-light);
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      margin-bottom: 4px
-    }
-
-    .stat-value {
-      font-size: 28px;
-      font-weight: 700;
-      font-family: 'JetBrains Mono', monospace;
-      line-height: 1;
-      color: var(--navy)
-    }
-
-    .stat-card.green .stat-value {
-      color: var(--green)
-    }
-
-    .stat-card.red .stat-value {
-      color: var(--red)
-    }
-
-    .stat-card.orange .stat-value {
-      color: var(--orange)
-    }
-
-    .stat-sub {
-      font-size: 11px;
-      color: var(--text-light);
-      margin-top: 4px
-    }
+    .stat-card.green .stat-value{color:var(--green)}
+    .stat-card.red .stat-value{color:var(--red)}
+    .stat-card.orange .stat-value{color:var(--orange)}
+    .stat-sub{font-size:11px;color:var(--text-dim);margin-top:5px}
 
     /* ── Sliders ─────────────────────────────────────────────────── */
-    .slider-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-bottom: 20px
+    .slider-row{
+      display:grid;grid-template-columns:1fr 1fr;
+      gap:12px;margin-bottom:20px
     }
-
-    .slider-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 14px 16px;
-      box-shadow: var(--shadow)
+    .slider-card{
+      background:var(--card-bg);
+      border:1px solid var(--border);
+      border-radius:12px;padding:14px 16px;
+      box-shadow:var(--shadow)
     }
-
-    .slider-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px
+    .slider-header{
+      display:flex;justify-content:space-between;
+      align-items:center;margin-bottom:8px
     }
-
-    .slider-name {
-      font-size: 12px;
-      color: var(--text-mid);
-      font-weight: 600
+    .slider-name{font-size:12px;color:var(--text-mid);font-weight:600}
+    .slider-val{
+      font-family:'JetBrains Mono',monospace;
+      font-size:14px;font-weight:700;color:var(--gold);
+      background:var(--gold-glow);
+      padding:2px 10px;border-radius:4px;
+      border:1px solid var(--border-gold)
     }
-
-    .slider-val {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 14px;
-      font-weight: 700;
-      color: var(--navy);
-      background: rgba(0, 74, 173, .07);
-      padding: 2px 10px;
-      border-radius: 4px
-    }
-
-    input[type=range] {
-      width: 100%;
-      accent-color: var(--navy)
-    }
+    input[type=range]{width:100%;accent-color:var(--gold)}
 
     /* ── Chart Container ─────────────────────────────────────────── */
-    .chart-card {
-      background: var(--card-bg);
-      border-radius: 10px;
-      padding: 18px;
-      box-shadow: var(--shadow);
-      border: 1px solid var(--border);
-      margin-bottom: 24px
+    .chart-card{
+      background:var(--card-bg);
+      border-radius:12px;padding:18px;
+      box-shadow:var(--shadow);
+      border:1px solid var(--border);
+      margin-bottom:24px
     }
-
-    .chart-wrap {
-      position: relative;
-      height: 420px
+    .chart-wrap{position:relative;height:460px}
+    .quadrant-legend{
+      display:grid;grid-template-columns:1fr 1fr;
+      margin-top:14px;gap:6px
     }
-
-    .quadrant-legend {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      margin-top: 12px;
-      gap: 6px
+    .ql{
+      font-size:11px;padding:5px 10px;
+      border-radius:6px;font-weight:500
     }
-
-    .ql {
-      font-size: 11px;
-      color: var(--text-light);
-      padding: 4px 10px;
-      border-radius: 4px
-    }
-
-    .ql.tl {
-      background: var(--green-bg);
-      color: var(--green)
-    }
-
-    .ql.tr {
-      background: var(--red-bg);
-      color: var(--red)
-    }
-
-    .ql.bl {
-      background: rgba(0, 74, 173, .06);
-      color: var(--navy)
-    }
-
-    .ql.br {
-      background: var(--orange-bg);
-      color: var(--orange)
-    }
+    .ql.tl{background:var(--blue-bg);color:var(--blue)}
+    .ql.tr{background:var(--red-bg);color:var(--red)}
+    .ql.bl{background:var(--green-bg);color:var(--green)}
+    .ql.br{background:var(--orange-bg);color:var(--orange)}
 
     /* ── Data Table ─────────────────────────────────────────────── */
-    .data-table {
-      width: 100%;
-      border-collapse: collapse;
-      background: var(--card-bg);
-      border-radius: 10px;
-      overflow: hidden;
-      box-shadow: var(--shadow);
-      margin-bottom: 24px;
-      font-size: 13px
+    .data-table{
+      width:100%;border-collapse:collapse;
+      background:var(--card-bg);
+      border-radius:12px;overflow:hidden;
+      box-shadow:var(--shadow);
+      margin-bottom:24px;font-size:13px;
+      border:1px solid var(--border)
     }
-
-    .data-table th {
-      background: var(--navy);
-      color: #fff;
-      padding: 10px 12px;
-      text-align: left;
-      font-weight: 600;
-      font-size: 13px
+    .data-table th{
+      background:var(--card-bg2);
+      color:var(--gold-dim);
+      padding:10px 12px;text-align:left;
+      font-weight:600;font-size:12px;
+      letter-spacing:.06em;text-transform:uppercase;
+      border-bottom:1px solid var(--border)
     }
-
-    .data-table td {
-      padding: 9px 12px;
-      border-bottom: 1px solid var(--border)
+    .data-table td{
+      padding:9px 12px;
+      border-bottom:1px solid rgba(26,42,69,.6);
+      color:var(--text)
     }
-
-    .data-table tr:last-child td {
-      border-bottom: none
+    .data-table tr:last-child td{border-bottom:none}
+    .data-table tr:hover td{background:rgba(245,200,66,.04)}
+    .data-table td.mono{font-family:'JetBrains Mono',monospace}
+    .badge{
+      display:inline-block;padding:2px 8px;
+      border-radius:4px;font-size:11px;
+      font-weight:600;font-family:'JetBrains Mono',monospace
     }
-
-    .data-table tr:hover td {
-      background: rgba(0, 74, 173, .03)
-    }
-
-    .data-table td.mono {
-      font-family: 'JetBrains Mono', monospace
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      font-family: 'JetBrains Mono', monospace
-    }
-
-    .badge.value {
-      background: var(--green-bg);
-      color: var(--green)
-    }
-
-    .badge.growth {
-      background: var(--yellow-bg);
-      color: var(--orange)
-    }
-
-    .badge.premium {
-      background: var(--red-bg);
-      color: var(--red)
-    }
-
-    .badge.quality {
-      background: rgba(0, 74, 173, .08);
-      color: var(--navy)
-    }
+    .badge.value{background:var(--green-bg);color:var(--green)}
+    .badge.growth{background:var(--orange-bg);color:var(--orange)}
+    .badge.premium{background:var(--red-bg);color:var(--red)}
+    .badge.quality{background:var(--blue-bg);color:var(--blue)}
 
     /* ── JSON Panel ─────────────────────────────────────────────── */
-    .json-panel {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px;
-      margin-bottom: 24px;
-      box-shadow: var(--shadow)
+    .json-panel{
+      background:var(--card-bg);
+      border:1px solid var(--border);
+      border-radius:12px;padding:16px;
+      margin-bottom:24px;box-shadow:var(--shadow)
     }
-
-    .json-toggle {
-      background: var(--navy);
-      color: #fff;
-      border: none;
-      padding: 9px 18px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-family: inherit;
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: .03em
+    .json-toggle{
+      background:var(--gold);color:#050d1a;
+      border:none;padding:9px 18px;
+      border-radius:6px;cursor:pointer;
+      font-family:inherit;font-size:13px;
+      font-weight:700;letter-spacing:.03em
     }
-
-    .json-body {
-      margin-top: 14px;
-      display: none
+    .json-toggle:hover{background:var(--gold-dim)}
+    .json-body{margin-top:14px;display:none}
+    .json-body.open{display:block}
+    .json-hint{
+      font-size:12px;color:var(--text-dim);
+      margin-bottom:8px;line-height:1.7
     }
-
-    .json-body.open {
-      display: block
+    .json-hint code{
+      background:var(--card-bg2);
+      border-radius:3px;padding:1px 5px;
+      font-family:'JetBrains Mono',monospace;
+      font-size:11px;color:var(--gold)
     }
-
-    .json-hint {
-      font-size: 12px;
-      color: var(--text-light);
-      margin-bottom: 8px;
-      line-height: 1.7
+    textarea#json-input{
+      width:100%;height:130px;
+      background:var(--card-bg2);
+      border:1px solid var(--border);
+      border-radius:6px;padding:10px;
+      font-family:'JetBrains Mono',monospace;
+      font-size:12px;resize:vertical;color:var(--text)
     }
-
-    .json-hint code {
-      background: #f0eee8;
-      border-radius: 3px;
-      padding: 1px 5px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px
+    .json-actions{
+      display:flex;align-items:center;gap:10px;margin-top:10px
     }
-
-    textarea#json-input {
-      width: 100%;
-      height: 130px;
-      background: #f8f7f2;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 10px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      resize: vertical;
-      color: var(--text)
+    .btn-load{
+      background:var(--gold);color:#050d1a;
+      border:none;padding:8px 20px;
+      border-radius:6px;cursor:pointer;
+      font-family:inherit;font-size:13px;font-weight:700
     }
+    .btn-load:hover{background:var(--gold-dim)}
+    .json-err{color:var(--red);font-size:12px}
+    .json-ok{color:var(--green);font-size:12px}
 
-    .json-actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-top: 10px
-    }
-
-    .btn-load {
-      background: var(--navy);
-      color: #fff;
-      border: none;
-      padding: 8px 20px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-family: inherit;
-      font-size: 13px;
-      font-weight: 600
-    }
-
-    .btn-load:hover {
-      background: var(--navy-light)
-    }
-
-    .json-err {
-      color: var(--red);
-      font-size: 12px
-    }
-
-    .json-ok {
-      color: var(--green);
-      font-size: 12px
-    }
-
-    /* ── No-data watermark ───────────────────────────────────────── */
-    .no-data {
-      text-align: center;
-      padding: 60px 20px;
-      color: var(--text-light);
-      font-size: 15px
+    /* ── No-data ─────────────────────────────────────────────────── */
+    .no-data{
+      text-align:center;padding:60px 20px;
+      color:var(--text-dim);font-size:15px
     }
 
     /* ── Footer ─────────────────────────────────────────────────── */
-    footer {
-      text-align: center;
-      padding: 20px;
-      font-size: 11px;
-      color: var(--text-light);
-      border-top: 1px solid var(--border);
-      margin-top: 10px
+    footer{
+      text-align:center;padding:24px 20px;
+      font-size:11px;color:var(--text-dim);
+      border-top:1px solid var(--border);
+      margin-top:10px;line-height:1.9
+    }
+    footer a{color:var(--gold-dim);text-decoration:none}
+    footer a:hover{color:var(--gold)}
+    .footer-brand{
+      font-size:13px;font-weight:600;
+      color:var(--gold-dim);margin-bottom:6px
     }
 
-    @media(max-width:600px) {
-      .slider-row {
-        grid-template-columns: 1fr
-      }
-
-      .quadrant-legend {
-        grid-template-columns: 1fr
-      }
+    /* ── Responsive ──────────────────────────────────────────────── */
+    @media(max-width:600px){
+      .slider-row{grid-template-columns:1fr}
+      .quadrant-legend{grid-template-columns:1fr}
+      .chart-wrap{height:340px}
+      .header h1{font-size:13px}
     }
   </style>
 </head>
@@ -455,8 +289,23 @@
 
   <!-- Header -->
   <div class="header">
-    <h1>📊 台股評估地圖 — P/E vs P/B Valuation Map</h1>
+    <div class="header-left">
+      <img class="header-logo"
+        src="https://mugglezoomi-web.github.io/muggle.zoo/logo-mugglezoo.png"
+        alt="Muggle Zoo">
+      <div class="header-titles">
+        <div class="header-brand">Muggle Zoo · 小工具</div>
+        <h1>台股評估地圖 — P/E vs P/B Valuation Map</h1>
+      </div>
+    </div>
     <div class="meta" id="header-meta">載入中...</div>
+  </div>
+
+  <!-- Chinese Logo Banner -->
+  <div style="text-align:center;padding:20px 20px 4px;background:var(--bg);">
+    <img src="https://mugglezoomi-web.github.io/muggle.zoo/logo-chinese.png"
+      alt="麻瓜婆婆動物園"
+      style="width:clamp(120px,28vw,180px);height:auto;display:inline-block;opacity:.95;">
   </div>
 
   <div class="content">
@@ -488,14 +337,14 @@
           <span class="slider-name">📐 本益比 P/E 分界線</span>
           <span class="slider-val" id="pe-val">20</span>
         </div>
-        <input type="range" id="pe-slider" min="5" max="80" value="20" oninput="onSlider()">
+        <input type="range" id="pe-slider" min="5" max="200" value="50" oninput="onSlider()">
       </div>
       <div class="slider-card">
         <div class="slider-header">
           <span class="slider-name">📐 股價淨值比 P/B 分界線</span>
           <span class="slider-val" id="pb-val">3.0</span>
         </div>
-        <input type="range" id="pb-slider" min="1" max="15" step="0.5" value="3" oninput="onSlider()">
+        <input type="range" id="pb-slider" min="1" max="25" step="0.5" value="5" oninput="onSlider()">
       </div>
     </div>
 
@@ -535,16 +384,22 @@
   </div><!-- /content -->
 
   <footer>
+    <div class="footer-brand">
+      <a href="https://mugglezoomi-web.github.io/muggle.zoo/" target="_blank">Muggle Zoo 麻瓜婆婆動物園</a>
+      &nbsp;·&nbsp;
+      <a href="https://youtube.com/@muggle-zoo" target="_blank">YouTube</a>
+      &nbsp;·&nbsp;
+      <a href="https://www.threads.com/@muggle.zoo" target="_blank">Threads</a>
+    </div>
     資料來源：台灣證券交易所 OpenAPI (openapi.twse.com.tw) ／ 僅供研究參考，非投資建議<br>
-    <a href="https://github.com" style="color:var(--navy)">GitHub</a> ·
-    使用 <a href="https://openapi.twse.com.tw" style="color:var(--navy)" target="_blank">TWSE OpenAPI</a> ·
-    本工具開放原始碼，歡迎自由使用
+    本工具開放使用 ·
+    Content IP under <a href="https://mismkt.com/zh/home/" target="_blank" style="color:var(--text-dim)">Mi's Marketing</a>
   </footer>
 
   <script>
     Chart.register(ChartDataLabels);
 
-    /* ── Seed Data（來自 twse_fetcher.py 2026-04-08）─────────────── */
+    /* ── Seed Data（來自 twse_fetcher.py 2026-04-09）─────────────── */
     let DATA = [
   {code:"2330",name:"台積電",pe:29.51,pb:9.35,dy:1.13},
   {code:"2308",name:"台達電",pe:71.09,pb:15.94,dy:0.71},
@@ -635,203 +490,223 @@
   {code:"2323",name:"中環",pe:6.87,pb:0.61,dy:1.84}
 ];
     let dataDate = "2026-04-10";
-
-    /* ── State ───────────────────────────────────────────────────── */
-    let peThresh = 20, pbThresh = 3.0;
+    let peThresh = 50, pbThresh = 5;
     let scatterChart = null;
 
-    /* ── Quadrant helper ─────────────────────────────────────────── */
+    /* ── Quadrant Classifier ─────────────────────────────────────── */
     function getQuadrant(pe, pb) {
-      const lo_pe = pe < peThresh, lo_pb = pb < pbThresh;
-      if (lo_pe && lo_pb) return { label: "低估價值", badge: "value", color: "#006B3C" };
-      if (lo_pe && !lo_pb) return { label: "高品質資產", badge: "quality", color: "#004AAD" };
-      if (!lo_pe && lo_pb) return { label: "成長合理", badge: "growth", color: "#CC5500" };
-      return { label: "高估成長", badge: "premium", color: "#C8102E" };
+      const hiPE = pe > peThresh, hiPB = pb > pbThresh;
+      if (!hiPE && hiPB)  return { badge:"quality", label:"高品質", color:"#60a5fa" };
+      if (hiPE  && hiPB)  return { badge:"premium", label:"高估成長", color:"#ef4444" };
+      if (!hiPE && !hiPB) return { badge:"value",   label:"低估價值", color:"#22c55e" };
+      return                     { badge:"growth",  label:"成長合理", color:"#f97316" };
     }
 
     /* ── Render Stats ────────────────────────────────────────────── */
     function renderStats() {
       const total = DATA.length;
-      const values = DATA.filter(d => d.pe < peThresh && d.pb < pbThresh);
-      const avgPE = (DATA.reduce((s, d) => s + d.pe, 0) / total).toFixed(1);
-      const avgDY = (DATA.reduce((s, d) => s + d.dy, 0) / total).toFixed(2);
-      const grid = document.getElementById('stats-grid');
-      grid.innerHTML = [
-        { cls: "", label: "樣本總數 TOTAL", val: total, sub: "追蹤中的股票" },
-        { cls: "green", label: "低估企業 VALUE", val: values.length, sub: "P/E & P/B 雙低" },
-        { cls: "", label: "平均本益比 AVG P/E", val: avgPE + "x", sub: "全樣本平均" },
-        { cls: "orange", label: "平均殖利率 AVG DY", val: avgDY + "%", sub: "全樣本平均" },
-      ].map(s => `
-    <div class="stat-card ${s.cls}">
-      <div class="stat-label">${s.label}</div>
-      <div class="stat-value">${s.val}</div>
-      <div class="stat-sub">${s.sub}</div>
-    </div>`).join('');
+      const values = DATA.filter(d => !( d.pe > peThresh) && !(d.pb > pbThresh));
+      const avgPE = (DATA.reduce((s,d) => s+d.pe, 0)/total).toFixed(1);
+      const avgDY = (DATA.reduce((s,d) => s+d.dy, 0)/total).toFixed(2);
+      document.getElementById('stats-grid').innerHTML = [
+        { cls:"",       label:"樣本總數 TOTAL",    val:total,       sub:"追蹤中的股票"},
+        { cls:"green",  label:"低估企業 VALUE",     val:values.length, sub:"P/E & P/B 雙低"},
+        { cls:"",       label:"平均本益比 AVG P/E", val:avgPE+"x",   sub:"全樣本平均"},
+        { cls:"orange", label:"平均殖利率 AVG DY",  val:avgDY+"%",   sub:"全樣本平均"},
+      ].map(s=>`
+        <div class="stat-card ${s.cls}">
+          <div class="stat-label">${s.label}</div>
+          <div class="stat-value">${s.val}</div>
+          <div class="stat-sub">${s.sub}</div>
+        </div>`).join('');
       document.getElementById('header-meta').textContent = `資料日期：${dataDate}`;
     }
 
     /* ── Render Chart ────────────────────────────────────────────── */
     function renderChart() {
-      const byQ = { value: [], quality: [], growth: [], premium: [] };
+      const byQ = { value:[], quality:[], growth:[], premium:[] };
       DATA.forEach(d => {
         const q = getQuadrant(d.pe, d.pb);
-        byQ[q.badge].push({ x: d.pe, y: d.pb, label: d.name, code: d.code, dy: d.dy });
+        byQ[q.badge].push({ x:d.pe, y:d.pb, label:d.name, code:d.code, dy:d.dy });
       });
 
       const datasets = [
-        { key: "value", label: "低估價值 (Value)", color: "#006B3C" },
-        { key: "quality", label: "高品質資產 (Quality)", color: "#004AAD" },
-        { key: "growth", label: "成長合理 (Growth)", color: "#CC5500" },
-        { key: "premium", label: "高估成長 (Premium)", color: "#C8102E" },
+        { key:"value",   label:"低估價值 (Value)",   color:"#22c55e" },
+        { key:"quality", label:"高品質資產 (Quality)",color:"#60a5fa" },
+        { key:"growth",  label:"成長合理 (Growth)",   color:"#f97316" },
+        { key:"premium", label:"高估成長 (Premium)",  color:"#ef4444" },
       ].map(q => ({
         label: q.label,
-        data: byQ[q.key],
-        backgroundColor: q.color,
-        borderColor: q.color,
-        pointRadius: 8,
-        pointHoverRadius: 11,
-        pointStyle: 'circle',
+        data:  byQ[q.key],
+        backgroundColor: q.color + "cc",   /* 帶透明度 */
+        borderColor:     q.color,
+        borderWidth:     1.5,
+        pointRadius:     5,               /* 小點 */
+        pointHoverRadius:10,
+        pointStyle:      'circle',
+        hoverBackgroundColor: q.color,
       }));
 
-      const maxPE = Math.ceil(Math.max(...DATA.map(d => d.pe)) * 1.2 / 5) * 5;
-      const maxPB = Math.ceil(Math.max(...DATA.map(d => d.pb)) * 1.2 / 2) * 2;
+      const maxPE = Math.ceil(Math.max(...DATA.map(d=>d.pe)) * 1.15 / 10) * 10;
+      const maxPB = Math.ceil(Math.max(...DATA.map(d=>d.pb)) * 1.15 / 2) * 2;
 
       const ctx = document.getElementById('scatter-chart').getContext('2d');
       if (scatterChart) scatterChart.destroy();
 
       scatterChart = new Chart(ctx, {
-        type: 'scatter',
-        data: { datasets },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          layout: { padding: { top: 20, right: 20 } },
-          plugins: {
-            legend: {
-              position: 'top',
-              labels: { font: { size: 12, family: "'Noto Sans TC'" }, padding: 16, usePointStyle: true }
+        type:'scatter',
+        data:{ datasets },
+        options:{
+          responsive:true,
+          maintainAspectRatio:false,
+          layout:{ padding:{ top:16, right:20 } },
+          animation:{ duration:400 },
+          plugins:{
+            legend:{
+              position:'top',
+              labels:{
+                font:{ size:12, family:"'Noto Sans TC'" },
+                padding:16,
+                usePointStyle:true,
+                color:'#a09480'
+              }
             },
-            tooltip: {
-              callbacks: {
+            tooltip:{
+              backgroundColor:'#0d1a2e',
+              borderColor:'#1a2a45',
+              borderWidth:1,
+              titleColor:'#f5c842',
+              bodyColor:'#e8dcc8',
+              padding:14,
+              cornerRadius:10,
+              callbacks:{
+                title: ctx => {
+                  const d = ctx[0].raw;
+                  return `${d.code}  ${d.label}`;
+                },
                 label: ctx => {
                   const d = ctx.raw;
-                  return [`${d.code} ${d.label}`, `P/E: ${d.x.toFixed(2)}x`, `P/B: ${d.y.toFixed(2)}x`, `殖利率: ${d.dy.toFixed(2)}%`];
+                  return [
+                    `P/E：${d.x.toFixed(2)}x`,
+                    `P/B：${d.y.toFixed(2)}x`,
+                    `殖利率：${d.dy.toFixed(2)}%`,
+                  ];
                 }
               },
-              titleFont: { size: 0 },
-              bodyFont: { size: 12, family: "'Noto Sans TC'" },
-              padding: 12,
-              cornerRadius: 8,
+              titleFont:{ size:13, family:"'Noto Sans TC'", weight:'700' },
+              bodyFont:{ size:12, family:"'Noto Sans TC'" },
             },
-            datalabels: {
-              align: 'top',
-              offset: 4,
-              font: { size: 11, family: "'Noto Sans TC'", weight: '500' },
-              color: ctx => ctx.dataset.backgroundColor,
-              formatter: (val) => val.label,
-            },
-            annotation: {},
+            /* 關閉常駐 label，只在 hover 時用 tooltip 顯示 */
+            datalabels:{ display:false },
           },
-          scales: {
-            x: {
-              title: { display: true, text: '本益比 (P/E Ratio)', font: { size: 12 }, color: '#777', padding: { top: 8 } },
-              min: 0, max: maxPE,
-              grid: { color: 'rgba(0,0,0,.05)' },
-              ticks: { font: { size: 11, family: "'JetBrains Mono'" } },
+          scales:{
+            x:{
+              title:{ display:true, text:'本益比 (P/E Ratio)', font:{ size:12 }, color:'#a09480', padding:{ top:8 } },
+              min:0, max:maxPE,
+              grid:{ color:'rgba(255,255,255,.05)' },
+              ticks:{ font:{ size:11, family:"'JetBrains Mono'" }, color:'#a09480' },
             },
-            y: {
-              title: { display: true, text: '股價淨值比 (P/B Ratio)', font: { size: 12 }, color: '#777' },
-              min: 0, max: maxPB,
-              grid: { color: 'rgba(0,0,0,.05)' },
-              ticks: { font: { size: 11, family: "'JetBrains Mono'" } },
+            y:{
+              title:{ display:true, text:'股價淨值比 (P/B Ratio)', font:{ size:12 }, color:'#a09480' },
+              min:0, max:maxPB,
+              grid:{ color:'rgba(255,255,255,.05)' },
+              ticks:{ font:{ size:11, family:"'JetBrains Mono'" }, color:'#a09480' },
             }
           },
         },
-        plugins: [{
-          id: 'quadrantLines',
-          afterDraw(chart) {
-            const { ctx, scales: { x, y } } = chart;
-            const xPx = x.getPixelForValue(peThresh);
-            const yPx = y.getPixelForValue(pbThresh);
-            ctx.save();
-            ctx.setLineDash([6, 4]);
-            ctx.strokeStyle = '#C8102E';
-            ctx.lineWidth = 1.5;
-            ctx.globalAlpha = 0.5;
-            // vertical line
-            ctx.beginPath(); ctx.moveTo(xPx, y.top); ctx.lineTo(xPx, y.bottom); ctx.stroke();
-            // horizontal line
-            ctx.beginPath(); ctx.moveTo(x.left, yPx); ctx.lineTo(x.right, yPx); ctx.stroke();
-            ctx.restore();
+        plugins:[
+          /* 深色 canvas 背景 */
+          {
+            id:'darkBg',
+            beforeDraw(chart){
+              const { ctx, chartArea } = chart;
+              ctx.save();
+              ctx.fillStyle = '#0d1a2e';
+              ctx.fillRect(chartArea.left, chartArea.top, chartArea.width, chartArea.height);
+              ctx.restore();
+            }
+          },
+          /* 象限分界線 */
+          {
+            id:'quadrantLines',
+            afterDraw(chart){
+              const { ctx, scales:{ x, y } } = chart;
+              const xPx = x.getPixelForValue(peThresh);
+              const yPx = y.getPixelForValue(pbThresh);
+              ctx.save();
+              ctx.setLineDash([6,4]);
+              ctx.strokeStyle = '#f5c842';
+              ctx.lineWidth = 1.2;
+              ctx.globalAlpha = 0.35;
+              ctx.beginPath(); ctx.moveTo(xPx, y.top); ctx.lineTo(xPx, y.bottom); ctx.stroke();
+              ctx.beginPath(); ctx.moveTo(x.left, yPx); ctx.lineTo(x.right, yPx); ctx.stroke();
+              ctx.restore();
+            }
           }
-        }]
+        ]
       });
     }
 
     /* ── Render Table ────────────────────────────────────────────── */
-    function renderTable() {
-      const sorted = [...DATA].sort((a, b) => a.pe - b.pe);
-      const tbody = document.getElementById('detail-tbody');
-      tbody.innerHTML = sorted.map(d => {
+    function renderTable(){
+      const sorted = [...DATA].sort((a,b)=>a.pe-b.pe);
+      document.getElementById('detail-tbody').innerHTML = sorted.map(d=>{
         const q = getQuadrant(d.pe, d.pb);
-        const dot = `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${q.color}"></span>`;
+        const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${q.color}"></span>`;
         return `<tr>
-      <td>${dot}</td>
-      <td class="mono" style="color:var(--navy);font-weight:600">${d.code}</td>
-      <td style="font-weight:500">${d.name}</td>
-      <td class="mono" style="font-weight:700">${d.pe.toFixed(2)}</td>
-      <td class="mono">${d.pb.toFixed(2)}</td>
-      <td class="mono" style="color:var(--green)">${d.dy.toFixed(2)}</td>
-      <td><span class="badge ${q.badge}">${q.label}</span></td>
-    </tr>`;
+          <td>${dot}</td>
+          <td class="mono" style="color:var(--gold);font-weight:600">${d.code}</td>
+          <td style="font-weight:500;color:var(--text)">${d.name}</td>
+          <td class="mono" style="font-weight:700;color:var(--text)">${d.pe.toFixed(2)}</td>
+          <td class="mono" style="color:var(--text-mid)">${d.pb.toFixed(2)}</td>
+          <td class="mono" style="color:var(--green)">${d.dy.toFixed(2)}</td>
+          <td><span class="badge ${q.badge}">${q.label}</span></td>
+        </tr>`;
       }).join('');
     }
 
     /* ── Refresh All ─────────────────────────────────────────────── */
-    function refresh() {
+    function refresh(){
       document.getElementById('pe-val').textContent = peThresh;
       document.getElementById('pb-val').textContent = parseFloat(pbThresh).toFixed(1);
-      renderStats();
-      renderChart();
-      renderTable();
+      renderStats(); renderChart(); renderTable();
     }
 
     /* ── Slider ──────────────────────────────────────────────────── */
-    function onSlider() {
+    function onSlider(){
       peThresh = +document.getElementById('pe-slider').value;
       pbThresh = +document.getElementById('pb-slider').value;
       refresh();
     }
 
     /* ── JSON toggle / load ──────────────────────────────────────── */
-    function toggleJSON() {
+    function toggleJSON(){
       document.getElementById('json-body').classList.toggle('open');
     }
-
-    function loadJSON() {
+    function loadJSON(){
       const raw = document.getElementById('json-input').value.trim();
       const msg = document.getElementById('json-msg');
-      try {
+      try{
         const obj = JSON.parse(raw);
         const rows = obj.financial_metrics || obj;
-        if (!Array.isArray(rows)) throw new Error("找不到 financial_metrics 陣列");
-        const parsed = rows.map(r => ({
-          code: r["股票代號"] || r.code || "",
-          name: r["公司名稱"] || r.name || "",
-          pe: parseFloat(r["本益比(倍)"] || r.pe || 0),
-          pb: parseFloat(r["股價淨值比(倍)"] || r.pb || 0),
-          dy: parseFloat(r["殖利率(%)"] || r.dy || 0),
-        })).filter(r => r.code && r.pe > 0 && r.pb > 0);
-        if (parsed.length === 0) throw new Error("解析後無有效資料");
+        if(!Array.isArray(rows)) throw new Error("找不到 financial_metrics 陣列");
+        const parsed = rows.map(r=>({
+          code: r["股票代號"]||r.code||"",
+          name: r["公司名稱"]||r.name||"",
+          pe:   parseFloat(r["本益比(倍)"]||r.pe||0),
+          pb:   parseFloat(r["股價淨值比(倍)"]||r.pb||0),
+          dy:   parseFloat(r["殖利率(%)"]||r.dy||0),
+        })).filter(r=>r.code&&r.pe>0&&r.pb>0);
+        if(parsed.length===0) throw new Error("解析後無有效資料");
         DATA = parsed;
-        dataDate = obj.meta?.generated_at?.slice(0, 10) || new Date().toISOString().slice(0, 10);
-        msg.className = 'json-ok';
-        msg.textContent = `✅ 成功載入 ${DATA.length} 支股票`;
+        dataDate = obj.meta?.generated_at?.slice(0,10)||new Date().toISOString().slice(0,10);
+        msg.className='json-ok';
+        msg.textContent=`✅ 成功載入 ${DATA.length} 支股票`;
         document.getElementById('json-body').classList.remove('open');
         refresh();
-      } catch (e) {
-        msg.className = 'json-err';
-        msg.textContent = `❌ ${e.message}`;
+      }catch(e){
+        msg.className='json-err';
+        msg.textContent=`❌ ${e.message}`;
       }
     }
 
@@ -839,5 +714,4 @@
     refresh();
   </script>
 </body>
-
 </html>
